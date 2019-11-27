@@ -1,5 +1,11 @@
 package mapreduce
 
+import (
+	"encoding/json"
+	"log"
+	"os"
+)
+
 func doReduce(
 	jobName string, // the name of the whole MapReduce job
 	reduceTask int, // which reduce task this is
@@ -17,6 +23,11 @@ func doReduce(
 	// reduceName(jobName, m, reduceTask) yields the file
 	// name from map task m.
 	//
+	inputFiles := make([]*os.File, nMap)
+	for i := 0; i < nMap; i++ {
+		fileName := reduceName(jobName, i, reduceTask)
+		inputFiles[i], _ = os.Open(fileName)
+	}
 	// Your doMap() encoded the key/value pairs in the intermediate
 	// files, so you will need to decode them. If you used JSON, you can
 	// read and decode by creating a decoder and repeatedly calling
@@ -25,6 +36,20 @@ func doReduce(
 	// You may find the first example in the golang sort package
 	// documentation useful.
 	//
+	intermediateKV := make(map[string][]string)
+	for _, inputFile := range inputFiles {
+		defer inputFile.Close()
+		dec := json.NewDecoder(inputFile)
+		for {
+			var kv KeyValue
+			err := dec.Decode(&kv)
+			if err != nil {
+				break
+			}
+			intermediateKV[kv.Key] = append(intermediateKV[kv.Key], kv.Value)
+		}
+	}
+
 	// reduceF() is the application's reduce function. You should
 	// call it once per distinct key, with a slice of all the values
 	// for that key. reduceF() returns the reduced value for that key.
@@ -44,4 +69,17 @@ func doReduce(
 	//
 	// Your code here (Part I).
 	//
+	out, err := os.Create(outFile)
+	if err != nil {
+		log.Fatal("Error in creating file:", outFile)
+	}
+	defer out.Close()
+	enc := json.NewEncoder(out)
+	for key, value := range intermediateKV {
+		kv := KeyValue{
+			Key:   key,
+			Value: reduceF(key, value),
+		}
+		enc.Encode(kv)
+	}
 }
